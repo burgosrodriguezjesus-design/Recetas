@@ -37,6 +37,8 @@ después `npm run build && npm run test:e2e`.
 
 ## Instalarla en el iPhone
 
+**App publicada:** https://mi-cocina-inteligente.vercel.app (Vercel, proyecto `mi-cocina-inteligente`).
+
 1. Publica la carpeta `dist/` en cualquier hosting estático **con HTTPS**
    (el flujo `.github/workflows/deploy.yml` lo hace en GitHub Pages: activa
    *Settings → Pages → Source: GitHub Actions* y haz push a `main`).
