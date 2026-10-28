@@ -6,11 +6,11 @@ import {
   addFrequentProducts,
   clearList,
   createList,
-  deleteItems,
   deleteList,
   duplicateList,
   previewFromPlan,
   restoreItems,
+  resetList,
   restoreList,
   setItemStatus,
   updateList,
@@ -20,7 +20,7 @@ import { itemSubtotal, quantityInPriceUnit, summarizeList } from '../../domain/s
 import { convertForProduct, productBaseUnit } from '../../domain/recipeCalc';
 import { formatMoney, formatNumber, formatQty, parseDecimal } from '../../domain/format';
 import { addDays, formatShortDate, formatWeekRange, startOfWeek, today } from '../../domain/dates';
-import { ORIGIN_LABEL } from '../../domain/labels';
+import { sectionEmoji, sectionOrder } from '../../domain/labels';
 import { normalizeText, UNITS } from '../../domain/units';
 import { shoppingListToCSV } from '../../domain/csv';
 import { comparePriceRecords } from '../../domain/stats';
@@ -31,19 +31,19 @@ import { useFeedback } from '../../ui/feedback';
 import { downloadFile, shareText } from '../../ui/share';
 import { AddDraftDialog } from './AddDraftDialog';
 import { ItemDialog } from './ItemDialog';
+import { createListFromTemplate } from '../../db/templates';
 import { ReceiveDialog } from './ReceiveDialog';
 
 function qtyLabel(it: ShoppingItem): string {
+  if (it.packageName) {
+    if (it.unit === 'ud') return `${formatNumber(it.quantity)} ${it.quantity === 1 ? 'pieza' : 'piezas'}`;
+    return it.quantity === 1 ? it.packageName : `${formatNumber(it.quantity)} × ${it.packageName}`;
+  }
   if (it.unit === 'paquete') {
     const n = `${formatNumber(it.quantity)} envase${it.quantity === 1 ? '' : 's'}`;
     return it.packageQuantity && it.packageUnit ? `${n} de ${formatQty(it.packageQuantity, it.packageUnit)}` : n;
   }
   return formatQty(it.quantity, it.unit);
-}
-
-function priceLabel(it: ShoppingItem): string | null {
-  if (it.unitPrice === undefined) return null;
-  return `${formatMoney(it.unitPrice)}/${it.priceUnit === 'paquete' ? 'envase' : UNITS[it.priceUnit ?? it.unit].label}`;
 }
 
 export function ShoppingPage() {
@@ -86,16 +86,21 @@ export function ShoppingPage() {
     return (items ?? []).filter((i) => !q || normalizeText(i.name).includes(q) || normalizeText(i.category).includes(q) || normalizeText(i.store ?? '').includes(q));
   }, [items, query]);
   const pending = filtered.filter((i) => i.status === 'pendiente');
-  const bought = filtered.filter((i) => i.status === 'comprado');
   const toReceive = (items ?? []).filter((i) => i.status === 'comprado' && !i.received);
 
+  // Como en Notion: secciones en el orden del súper y, dentro de cada una, los
+  // productos en el orden en que se añadieron. Lo comprado se queda en su sitio, tachado.
   const groups = useMemo(() => {
-    const sorted = [...pending].sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    if (sort === 'nombre') return [['Todos', sorted] as const];
+    if (sort === 'nombre') return [['Todos', [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'es'))] as const];
     const m = new Map<string, ShoppingItem[]>();
-    for (const it of sorted) m.set(it.category || 'Otros', [...(m.get(it.category || 'Otros') ?? []), it]);
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'es'));
-  }, [pending, sort]);
+    for (const it of [...filtered].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) m.set(it.category || 'Otros', [...(m.get(it.category || 'Otros') ?? []), it]);
+    return [...m.entries()].sort((a, b) => sectionOrder(a[0]) - sectionOrder(b[0]) || a[0].localeCompare(b[0], 'es'));
+  }, [filtered, sort]);
+  // ⏳ Productos que duran varias semanas: total aparte, porque no se compran cada semana.
+  const longLasting = useMemo(() => {
+    const its = (items ?? []).filter((i) => i.lastsWeeks);
+    return { count: its.length, amount: its.reduce((t, i) => t + (itemSubtotal(i) ?? 0), 0) };
+  }, [items]);
 
   if (!lists || !items) return <Loading />;
 
@@ -122,18 +127,13 @@ export function ShoppingPage() {
     }
   };
 
-  const removeItem = async (it: ShoppingItem) => {
-    const removed = await deleteItems([it.id]);
-    toast(`«${it.name}» eliminado`, { action: { label: 'Deshacer', onClick: () => restoreItems(removed) } });
-  };
-
   const textForShare = () => {
     const lines = [`${list?.name ?? 'Lista de la compra'}`, ''];
     for (const [cat, its] of groups) {
-      if (sort === 'categoria') lines.push(`— ${cat} —`);
+      if (sort === 'categoria') lines.push('', `${sectionEmoji(cat)} ${cat}`);
       for (const it of its) {
         const sub = itemSubtotal(it);
-        lines.push(`☐ ${it.name}: ${qtyLabel(it)}${sub !== null ? ` · ${formatMoney(sub)}` : ''}`);
+        lines.push(`${it.status === 'comprado' ? '☑' : '☐'} ${it.name} — ${qtyLabel(it)}${sub !== null ? ` · ${formatMoney(sub)}` : ''}${it.lastsWeeks ? ` · ⏳ ${it.lastsWeeks} semanas` : ''}${it.notes ? ` (${it.notes})` : ''}`);
       }
     }
     lines.push('', `Total pendiente estimado: ${formatMoney(summary.pendingAmount)}`);
@@ -151,6 +151,17 @@ export function ShoppingPage() {
     frequent: async () => {
       const n = await addFrequentProducts(listId);
       toast(n ? `${n} producto(s) frecuente(s) añadido(s)` : 'No hay productos frecuentes nuevos. Márcalos con ★ en «Productos y precios».', { type: n ? 'ok' : 'info' });
+    },
+    newWeek: async () => {
+      const ok = await confirm({ title: 'Empezar semana nueva', message: 'Se desmarcarán todos los productos para volver a usar la lista. Lo que ya registraste como comprado sigue en el historial. Si aún te queda algo con ⏳, no lo vuelvas a marcar.', confirmLabel: 'Desmarcar todo' });
+      if (!ok) return;
+      const before = await resetList(listId);
+      toast('Lista lista para la semana nueva', { action: { label: 'Deshacer', onClick: () => restoreItems(before) } });
+    },
+    template: async () => {
+      const l = await createListFromTemplate();
+      selectList(l.id);
+      toast('Lista semanal de Mercadona creada');
     },
     duplicate: async () => {
       const copy = await duplicateList(listId);
@@ -210,7 +221,16 @@ export function ShoppingPage() {
       {tab === 'historial' ? (
         <PurchaseHistory />
       ) : lists.length === 0 ? (
-        <EmptyState icon="cart" title="No tienes listas todavía" action={<Button variant="primary" icon="plus" onClick={() => setListForm('new')}>Crear lista</Button>}>
+        <EmptyState
+          icon="cart"
+          title="No tienes listas todavía"
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="primary" icon="cart" onClick={runAction(actions.template)}>Crear mi lista semanal de Mercadona</Button>
+              <Button icon="plus" onClick={() => setListForm('new')}>Crear lista vacía</Button>
+            </div>
+          }
+        >
           Crea una lista para la semana o para una ocasión. También puedes generarla desde el planificador.
         </EmptyState>
       ) : (
@@ -238,6 +258,11 @@ export function ShoppingPage() {
                 />
                 <div className="tabular col-span-2 text-xs text-muted md:col-span-4">
                   {summary.pendingCount} pendiente{summary.pendingCount === 1 ? '' : 's'} · {summary.purchasedCount} comprado{summary.purchasedCount === 1 ? '' : 's'}
+                  {longLasting.count > 0 && (
+                    <>
+                      <span className="block">⏳ {longLasting.count} productos duran varias semanas ({formatMoney(longLasting.amount)}): si aún te quedan, no los compres. Sin ellos: {formatMoney(summary.estimatedTotal - longLasting.amount)}</span>
+                    </>
+                  )}
                 </div>
               </Card>
 
@@ -257,27 +282,30 @@ export function ShoppingPage() {
                 <EmptyState icon="cart" title="Lista vacía">Añade productos a mano, desde el plan de comidas o tus productos frecuentes.</EmptyState>
               ) : (
                 <div className="grid gap-3">
-                  {groups.map(([cat, its]) => (
-                    <section key={cat}>
-                      {sort === 'categoria' && <h2 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">{cat}</h2>}
-                      <Card className="divide-y divide-line overflow-hidden">
-                        {its.map((it) => (
-                          <ItemRow key={it.id} it={it} pct={compare(it)} onToggle={() => toggle(it)} onEdit={() => { setEditing(it); setItemOpen(true); }} onDelete={() => removeItem(it)} />
-                        ))}
-                      </Card>
-                    </section>
-                  ))}
-                  {pending.length === 0 && filtered.length > 0 && <Notice tone="ok" icon="check">¡Todo comprado!</Notice>}
-                  {bought.length > 0 && (
-                    <section>
-                      <h2 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Comprado ({bought.length})</h2>
-                      <Card className="divide-y divide-line overflow-hidden opacity-90">
-                        {bought.map((it) => (
-                          <ItemRow key={it.id} it={it} pct={null} onToggle={() => toggle(it)} onEdit={() => { setEditing(it); setItemOpen(true); }} onDelete={() => removeItem(it)} />
-                        ))}
-                      </Card>
-                    </section>
-                  )}
+                  {pending.length === 0 && filtered.length > 0 && <Notice tone="ok" icon="check">¡Todo comprado! Cuando registres la compra, pulsa ··· → «Empezar semana nueva».</Notice>}
+                  {groups.map(([cat, its]) => {
+                    const done = its.filter((i) => i.status === 'comprado').length;
+                    const total = its.reduce((t, i) => t + (itemSubtotal(i) ?? 0), 0);
+                    return (
+                      <section key={cat}>
+                        {sort === 'categoria' && (
+                          <h2 className="mb-1.5 flex items-baseline justify-between gap-2 px-1">
+                            <span className="text-lg font-bold">
+                              <span aria-hidden>{sectionEmoji(cat)}</span> {cat}
+                            </span>
+                            <span className="tabular text-xs text-muted">
+                              {done}/{its.length} · {formatMoney(total)}
+                            </span>
+                          </h2>
+                        )}
+                        <Card className="divide-y divide-line overflow-hidden">
+                          {its.map((it) => (
+                            <ItemRow key={it.id} it={it} pct={it.status === 'pendiente' ? compare(it) : null} onToggle={() => toggle(it)} onEdit={() => { setEditing(it); setItemOpen(true); }} />
+                          ))}
+                        </Card>
+                      </section>
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -306,8 +334,10 @@ export function ShoppingPage() {
       />
       <Dialog open={menuOpen} onClose={() => setMenuOpen(false)} title="Opciones de la lista">
         <div className="grid gap-2">
+          <Button icon="undo" onClick={runAction(actions.newWeek)} disabled={summary.purchasedCount === 0}>Empezar semana nueva (desmarcar todo)</Button>
           <Button icon="edit" onClick={() => { setMenuOpen(false); setListForm('edit'); }}>Nombre y presupuesto</Button>
           <Button icon="copy" onClick={runAction(actions.duplicate)}>Duplicar lista</Button>
+          <Button icon="cart" onClick={runAction(actions.template)}>Nueva lista semanal de Mercadona</Button>
           <Button icon="share" onClick={runAction(actions.share)}>Compartir</Button>
           <Button icon="download" onClick={runAction(actions.csv)}>Exportar CSV</Button>
           <Button icon="printer" onClick={runAction(actions.print)}>Imprimir</Button>
@@ -321,46 +351,37 @@ export function ShoppingPage() {
   );
 }
 
-function ItemRow({ it, pct, onToggle, onEdit, onDelete }: { it: ShoppingItem; pct: number | null; onToggle: () => void; onEdit: () => void; onDelete: () => void }) {
+function ItemRow({ it, pct, onToggle, onEdit }: { it: ShoppingItem; pct: number | null; onToggle: () => void; onEdit: () => void }) {
   const sub = itemSubtotal(it);
   const bought = it.status === 'comprado';
-  const price = priceLabel(it);
+  const paid = bought && it.paidPrice !== undefined;
   return (
-    <div className="flex items-center gap-1 pr-1">
-      <label className="flex h-14 w-12 shrink-0 cursor-pointer items-center justify-center">
+    <div className={`flex items-start gap-1 pr-3 ${bought ? 'bg-raised/60' : ''}`}>
+      <label className="flex min-h-14 w-12 shrink-0 cursor-pointer items-center justify-center">
         <input type="checkbox" className="h-6 w-6" checked={bought} onChange={onToggle} disabled={it.received} aria-label={`${bought ? 'Desmarcar' : 'Marcar como comprado'}: ${it.name}`} />
       </label>
-      <button type="button" onClick={onEdit} className="flex min-h-14 min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left">
-        <div className="min-w-0">
-          <div className={`font-medium ${bought ? 'text-muted line-through' : ''}`}>{it.name}</div>
-          <div className="tabular text-xs text-muted">
+      <button type="button" onClick={onEdit} className="flex min-h-14 min-w-0 flex-1 items-start justify-between gap-3 py-2.5 text-left">
+        <div className={`min-w-0 ${bought ? 'text-muted line-through decoration-1' : ''}`}>
+          <div className="leading-snug font-semibold">{it.name}</div>
+          <div className="tabular mt-0.5 text-sm text-muted">
             {qtyLabel(it)}
-            {price && ` · ${price}`}
             {it.neededQuantity !== undefined && it.neededUnit && it.unit === 'paquete' && ` · necesitas ${formatQty(it.neededQuantity, it.neededUnit)}`}
-            {it.store && ` · ${it.store}`}
+            {it.notes && ` · ${it.notes}`}
           </div>
-          <div className="mt-0.5 flex flex-wrap gap-1">
-            {it.origin !== 'manual' && <Badge>{ORIGIN_LABEL[it.origin]}</Badge>}
-            {pct !== null && Math.abs(pct) >= 1 && <Badge tone={pct > 0 ? 'danger' : 'ok'}>{pct > 0 ? '▲' : '▼'} {formatNumber(Math.abs(pct), 1)} % vs. última compra</Badge>}
-            {it.received && <Badge tone="ok">en despensa</Badge>}
-            {it.notes && <Badge>{it.notes}</Badge>}
-          </div>
-        </div>
-        <div className="tabular shrink-0 text-right">
-          {bought && it.paidPrice !== undefined ? (
-            <>
-              <div className="font-semibold">{formatMoney(it.paidPrice)}</div>
-              <div className="text-[11px] text-muted">pagado</div>
-            </>
-          ) : (
-            <>
-              <div className="font-semibold">{sub === null ? <span className="text-xs font-normal text-warn">sin precio</span> : formatMoney(sub)}</div>
-              {sub !== null && <div className="text-[11px] text-muted">estimado</div>}
-            </>
+          {(it.lastsWeeks || (pct !== null && Math.abs(pct) >= 1) || it.received || it.origin === 'receta') && (
+            <div className="mt-1 flex flex-wrap gap-1 no-underline">
+              {it.lastsWeeks && <Badge tone="warn">⏳ {it.lastsWeeks} semanas</Badge>}
+              {it.origin === 'receta' && <Badge>para tus recetas</Badge>}
+              {pct !== null && Math.abs(pct) >= 1 && <Badge tone={pct > 0 ? 'danger' : 'ok'}>{pct > 0 ? '▲' : '▼'} {formatNumber(Math.abs(pct), 1)} % vs. última compra</Badge>}
+              {it.received && <Badge tone="ok">en despensa</Badge>}
+            </div>
           )}
         </div>
+        <div className="tabular shrink-0 pt-0.5 text-right">
+          <div className={`font-semibold ${bought ? 'text-muted' : ''}`}>{paid ? formatMoney(it.paidPrice) : sub === null ? <span className="text-xs font-normal text-warn">sin precio</span> : formatMoney(sub)}</div>
+          {paid && <div className="text-[11px] text-muted">pagado</div>}
+        </div>
       </button>
-      <IconButton icon="trash" label={`Eliminar ${it.name}`} className="no-print text-muted" onClick={onDelete} />
     </div>
   );
 }

@@ -231,3 +231,35 @@ describe('Persistencia y copias de seguridad', () => {
     expect(await db.recipes.count()).toBe(2);
   });
 });
+
+describe('Lista semanal de Notion (plantilla)', () => {
+  it('reproduce la lista con sus 28 productos, secciones y el total de Notion (84,42 €)', async () => {
+    const { createListFromTemplate, MERCADONA_WEEKLY } = await import('./templates');
+    const list = await createListFromTemplate();
+    const items = await db.shoppingItems.where('listId').equals(list.id).toArray();
+    expect(items).toHaveLength(MERCADONA_WEEKLY.length);
+    expect(summarizeList(items).estimatedTotal).toBe(84.42);
+    const pollo = items.find((i) => i.name === 'Pechugas enteras de pollo')!;
+    expect(pollo).toMatchObject({ quantity: 3, unit: 'paquete', unitPrice: 3.86, packageName: 'bandeja', category: 'Carne y pescado' });
+    expect(items.find((i) => i.name === 'Avena molida Hacendado')!.lastsWeeks).toBe(3);
+    expect(new Set(items.map((i) => i.category))).toEqual(new Set(['Carne y pescado', 'Huevos y lácteos', 'Panadería', 'Despensa', 'Fruta y verdura']));
+  });
+
+  it('solo se crea automáticamente una vez, aunque se llame a la vez', async () => {
+    const { seedTemplateOnce } = await import('./templates');
+    await Promise.all([seedTemplateOnce(), seedTemplateOnce()]);
+    expect(await db.shoppingLists.count()).toBe(1);
+  });
+
+  it('«Empezar semana nueva» desmarca todo y conserva el historial', async () => {
+    const { createListFromTemplate } = await import('./templates');
+    const { resetList } = await import('./shopping');
+    const list = await createListFromTemplate();
+    const [first] = await db.shoppingItems.where('listId').equals(list.id).toArray();
+    await setItemStatus(first.id, 'comprado');
+    await receivePurchase(list.id, [{ itemId: first.id, paid: 11, addToPantry: true, location: 'nevera' }], { updateReferencePrices: false });
+    await resetList(list.id);
+    expect(await db.shoppingItems.where('status').equals('comprado').count()).toBe(0);
+    expect(await db.purchases.count()).toBe(1);
+  });
+});

@@ -128,6 +128,8 @@ export const shoppingItemSchema = z.object({
   neededUnit: unitSchema.optional(),
   packageQuantity: pos.optional(),
   packageUnit: unitSchema.optional(),
+  packageName: optText(60),
+  lastsWeeks: z.number().int().min(1).max(52).optional(),
   paidPrice: nonNeg.optional(),
   store: optText(80),
   brand: optText(80),
@@ -196,6 +198,7 @@ export const settingsSchema = z.object({
   enabledSlots: z.array(slotSchema).min(1),
   dislikedProductIds: z.array(id),
   lastBackupAt: timestamp.optional(),
+  shoppingTemplateSeeded: z.boolean().optional(),
 });
 
 export const BACKUP_FORMAT = 'mi-cocina-inteligente';

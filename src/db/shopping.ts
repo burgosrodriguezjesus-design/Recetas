@@ -346,3 +346,22 @@ export async function lastPaidPrice(productId: string): Promise<PriceRecord | un
   const recs = await db.priceRecords.where('productId').equals(productId).filter((r) => r.source === 'compra' && r.pricePerBase !== undefined).toArray();
   return recs.sort(comparePriceRecords).at(-1);
 }
+
+/**
+ * Nueva semana: vuelve a dejar todos los productos como pendientes (como
+ * desmarcar todo en Notion). Las compras ya registradas siguen en el historial.
+ * Devuelve el estado anterior para poder deshacer.
+ */
+export async function resetList(listId: string): Promise<ShoppingItem[]> {
+  return db.transaction('rw', db.shoppingItems, async () => {
+    const items = await db.shoppingItems.where('listId').equals(listId).toArray();
+    const now = nowISO();
+    await db.shoppingItems.bulkPut(
+      items.map((it) => {
+        const { paidPrice: _p, purchasedAt: _a, received: _r, ...rest } = it;
+        return { ...rest, status: 'pendiente' as const, updatedAt: now };
+      }),
+    );
+    return items;
+  });
+}

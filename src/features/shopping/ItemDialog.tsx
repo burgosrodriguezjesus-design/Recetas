@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { addItem, suggestedPrice, updateItem } from '../../db/shopping';
+import { addItem, deleteItems, restoreItems, suggestedPrice, updateItem } from '../../db/shopping';
 import { ValidationError } from '../../db/common';
 import type { Product, ShoppingItem, Unit } from '../../domain/types';
 import { formatMoney, formatQty, parseDecimal } from '../../domain/format';
@@ -21,6 +21,8 @@ interface Form {
   priceUnit: Unit;
   packageQuantity: string;
   packageUnit: Unit;
+  packageName: string;
+  lastsWeeks: string;
   paidPrice: string;
   store: string;
   brand: string;
@@ -40,6 +42,8 @@ function toForm(it?: ShoppingItem): Form {
     priceUnit: it?.priceUnit ?? it?.unit ?? 'ud',
     packageQuantity: s(it?.packageQuantity),
     packageUnit: it?.packageUnit ?? 'kg',
+    packageName: it?.packageName ?? '',
+    lastsWeeks: it?.lastsWeeks ? String(it.lastsWeeks) : '',
     paidPrice: s(it?.paidPrice),
     store: it?.store ?? '',
     brand: it?.brand ?? '',
@@ -99,6 +103,8 @@ export function ItemDialog({ open, listId, item, onClose }: { open: boolean; lis
     if (price === null || (price !== undefined && price < 0)) errs.unitPrice = 'Precio no válido';
     if (pkgQ === null || (pkgQ !== undefined && pkgQ <= 0)) errs.packageQuantity = 'Tamaño no válido';
     if (form.unit === 'paquete' && form.priceUnit !== 'paquete' && !pkgQ) errs.packageQuantity = 'Indica el tamaño del envase para poder calcular el precio';
+    const weeks = form.lastsWeeks.trim() ? parseDecimal(form.lastsWeeks) : undefined;
+    if (weeks === null || (weeks !== undefined && (!Number.isInteger(weeks) || weeks < 1 || weeks > 52))) errs.lastsWeeks = 'Número de semanas entre 1 y 52';
     const paid = form.paidPrice.trim() ? parseDecimal(form.paidPrice) : undefined;
     if (paid === null || (paid !== undefined && paid < 0)) errs.paidPrice = 'Importe no válido';
     if (price !== undefined && price !== null && preview === null && qty) errs.priceUnit = 'La unidad del precio no es compatible con la cantidad';
@@ -114,6 +120,8 @@ export function ItemDialog({ open, listId, item, onClose }: { open: boolean; lis
       priceUnit: price !== undefined ? form.priceUnit : undefined,
       packageQuantity: pkgQ ?? undefined,
       packageUnit: pkgQ ? form.packageUnit : undefined,
+      packageName: form.packageName.trim() || undefined,
+      lastsWeeks: weeks ?? undefined,
       store: form.store.trim() || undefined,
       brand: form.brand.trim() || undefined,
       notes: form.notes.trim() || undefined,
@@ -133,6 +141,13 @@ export function ItemDialog({ open, listId, item, onClose }: { open: boolean; lis
     }
   };
 
+  const remove = async () => {
+    if (!item) return;
+    const removed = await deleteItems([item.id]);
+    onClose();
+    toast(`«${item.name}» eliminado`, { action: { label: 'Deshacer', onClick: () => restoreItems(removed) } });
+  };
+
   const units = UNIT_OPTIONS.filter((u) => u.value !== 'pizca' && u.value !== 'cda' && u.value !== 'cdta');
 
   return (
@@ -142,6 +157,11 @@ export function ItemDialog({ open, listId, item, onClose }: { open: boolean; lis
       title={item ? 'Editar producto' : 'Añadir producto'}
       footer={
         <>
+          {item && (
+            <Button variant="ghost" icon="trash" className="mr-auto text-danger" onClick={remove}>
+              Eliminar
+            </Button>
+          )}
           <Button onClick={onClose}>Cancelar</Button>
           <Button variant="primary" onClick={submit}>{item ? 'Guardar' : 'Añadir'}</Button>
         </>
@@ -167,6 +187,10 @@ export function ItemDialog({ open, listId, item, onClose }: { open: boolean; lis
               </Select>
             </>
           )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <TextInput label="Formato en tienda" placeholder="bandeja, malla 5 kg…" value={form.packageName} onChange={(e) => set('packageName', e.target.value)} />
+          <NumberInput label="⏳ Dura (semanas)" value={form.lastsWeeks} onChange={(e) => set('lastsWeeks', e.target.value)} error={errors.lastsWeeks} inputMode="numeric" hint="Opcional" />
         </div>
         <p className="tabular text-sm">
           Subtotal estimado: <strong>{preview !== null ? formatMoney(preview) : '—'}</strong>

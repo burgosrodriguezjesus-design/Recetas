@@ -5,6 +5,7 @@ import { FeedbackProvider, useFeedback } from './ui/feedback';
 import { useSettings } from './hooks/data';
 import { useTheme } from './hooks/useTheme';
 import { db, requestPersistentStorage } from './db/db';
+import { seedTemplateOnce } from './db/templates';
 import { PlannerPage } from './features/planner/PlannerPage';
 import { RecipesPage } from './features/recipes/RecipesPage';
 import { RecipeDetail } from './features/recipes/RecipeDetail';
@@ -53,7 +54,10 @@ function Bootstrap() {
   useTheme(settings.theme);
 
   useEffect(() => {
-    db.open().catch((e) => error(new Error(`No se pudo abrir la base de datos local (${e?.message ?? e}). Comprueba que el navegador no está en modo privado.`)));
+    db.open()
+      .then(() => seedTemplateOnce())
+      .then((created) => created && toast('Te he preparado tu lista semanal de Mercadona en «Compra»', { type: 'info' }))
+      .catch((e) => error(new Error(`No se pudo abrir la base de datos local (${e?.message ?? e}). Comprueba que el navegador no está en modo privado.`)));
     void requestPersistentStorage();
     if (import.meta.env.PROD) {
       import('./pwa')

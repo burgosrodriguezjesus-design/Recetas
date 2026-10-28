@@ -306,6 +306,6 @@ describe('CSV', () => {
     const csv = shoppingListToCSV([item({ name: '=HYPERLINK("x")', quantity: 1.5, unit: 'kg', unitPrice: 2, priceUnit: 'kg' })]);
     expect(csv.startsWith('﻿')).toBe(true);
     expect(csv).toContain(`"'=HYPERLINK(""x"")"`);
-    expect(csv).toContain(';1,5;kg;2;kg;3;');
+    expect(csv).toContain(';1,5;kg;;;2;kg;3;');
   });
 });

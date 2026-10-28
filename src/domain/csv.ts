@@ -13,7 +13,7 @@ function cell(value: string | number | undefined | null): string {
 }
 
 export function shoppingListToCSV(items: ShoppingItem[]): string {
-  const header = ['Producto', 'Categoría', 'Cantidad', 'Unidad', 'Precio unitario (€)', 'Por', 'Subtotal estimado (€)', 'Pagado (€)', 'Estado', 'Origen', 'Tienda', 'Marca', 'Notas'];
+  const header = ['Producto', 'Categoría', 'Cantidad', 'Unidad', 'Formato', 'Dura (semanas)', 'Precio unitario (€)', 'Por', 'Subtotal estimado (€)', 'Pagado (€)', 'Estado', 'Origen', 'Tienda', 'Marca', 'Notas'];
   const rows = items.map((it) => {
     const paid = lineAmount(it);
     return [
@@ -21,6 +21,8 @@ export function shoppingListToCSV(items: ShoppingItem[]): string {
       it.category,
       it.quantity,
       UNITS[it.unit].label,
+      it.packageName,
+      it.lastsWeeks,
       it.unitPrice,
       it.priceUnit ? UNITS[it.priceUnit].label : '',
       itemSubtotal(it),

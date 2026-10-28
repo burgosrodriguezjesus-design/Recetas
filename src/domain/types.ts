@@ -142,6 +142,10 @@ export interface ShoppingItem {
   /** Tamaño de un envase cuando `unit === 'paquete'`, para pasarlo a la despensa. */
   packageQuantity?: number;
   packageUnit?: Unit;
+  /** Formato tal como se ve en la tienda: "bandeja", "malla 5 kg", "pack de 6 latas". */
+  packageName?: string;
+  /** ⏳ Semanas que suele durar: si aún queda en casa, no hace falta comprarlo. */
+  lastsWeeks?: number;
   /** Importe realmente pagado por la línea completa (solo al comprar). */
   paidPrice?: number;
   store?: string;
@@ -218,4 +222,6 @@ export interface Settings {
   enabledSlots: MealSlot[];
   dislikedProductIds: string[];
   lastBackupAt?: string;
+  /** Ya se creó la lista semanal de plantilla (para no repetirla). */
+  shoppingTemplateSeeded?: boolean;
 }
