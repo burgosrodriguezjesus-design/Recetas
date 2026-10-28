@@ -98,7 +98,7 @@ export function AddDraftDialog({
       cancelled = true;
     };
     // `load` cambia en cada render del padre; solo se recalcula al abrir o cambiar opciones.
-  }, [open, subtract, round]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, subtract, round]);
 
   useEffect(() => {
     if (lists && !listId) setListId(lists[0]?.id ?? 'nueva');

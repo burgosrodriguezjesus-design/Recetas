@@ -38,7 +38,7 @@ export function ReceiveDialog({ open, listId, items, onClose }: { open: boolean;
       ),
     );
     setDate(today());
-  }, [open, ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, ids]);
 
   const total = roundMoney(items.reduce((s, it) => s + (parseDecimal(rows[it.id]?.paid ?? '') ?? 0), 0));
   const missingPaid = items.filter((it) => parseDecimal(rows[it.id]?.paid ?? '') === null);
