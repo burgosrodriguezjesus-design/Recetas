@@ -1,5 +1,6 @@
 // Pruebas de integración con una IndexedDB simulada (fake-indexeddb).
 import { beforeEach, describe, expect, it } from 'vitest';
+import Dexie from 'dexie';
 import { CocinaDB, db, DB_NAME } from './db';
 import { saveProduct, saveRecipe, deleteProduct, saveSettings } from './catalog';
 import { addMeal, copyDays, markPrepared, previewCooking, swapDays } from './planner';
@@ -9,6 +10,7 @@ import { eraseAllData, exportBackup, parseBackup, restoreBackup } from './backup
 import { loadSampleData } from './sampleData';
 import { ValidationError } from './common';
 import { summarizeList } from '../domain/shopping';
+import { comparePriceRecords, priceChanges } from '../domain/stats';
 
 beforeEach(async () => {
   await eraseAllData();
@@ -49,7 +51,7 @@ describe('Productos y recetas', () => {
   it('guarda el histórico cuando cambia el precio de referencia', async () => {
     const { pollo } = await setup();
     await saveProduct({ ...pollo, price: 8 });
-    const recs = await db.priceRecords.where('productId').equals(pollo.id).toArray();
+    const recs = (await db.priceRecords.where('productId').equals(pollo.id).toArray()).sort(comparePriceRecords);
     expect(recs.map((r) => Math.round(r.pricePerBase! * 1000 * 100) / 100)).toEqual([7.5, 8]);
   });
 });
@@ -161,6 +163,32 @@ describe('Despensa', () => {
   it('valida fechas incoherentes', async () => {
     const { pollo } = await setup();
     await expect(savePantryItem({ productId: pollo.id, quantity: 1, unit: 'g', location: 'nevera', purchaseDate: '2026-10-10', expiryDate: '2026-10-01' })).rejects.toThrow(/anterior/);
+  });
+});
+
+describe('Migraciones', () => {
+  it('migra una base de datos de la versión 1 sin perder datos', async () => {
+    const name = 'migracion-v1';
+    const old = new Dexie(name);
+    old.version(1).stores({ priceRecords: 'id, productId, date' });
+    await old.open();
+    await old.table('priceRecords').add({ id: 'p1', productId: 'x', date: '2026-01-05', paid: 2, quantity: 1, unit: 'kg', source: 'manual', pricePerBase: 0.002 });
+    old.close();
+    const upgraded = new CocinaDB(name);
+    await upgraded.open();
+    expect(upgraded.verno).toBe(2);
+    expect(await upgraded.priceRecords.get('p1')).toMatchObject({ paid: 2, createdAt: '2026-01-05T00:00:00.000Z' });
+    upgraded.close();
+    await Dexie.delete(name);
+  });
+
+  it('ordena varios precios del mismo día por su momento de registro', () => {
+    const base = { productId: 'x', date: '2026-01-05', paid: 1, quantity: 1, unit: 'kg' as const, source: 'manual' as const };
+    const changes = priceChanges([
+      { ...base, id: 'zzz', pricePerBase: 0.008, createdAt: '2026-01-05T10:00:00.002Z' },
+      { ...base, id: 'aaa', pricePerBase: 0.0075, createdAt: '2026-01-05T10:00:00.001Z' },
+    ]);
+    expect(changes[0]).toMatchObject({ previous: 0.0075, last: 0.008 });
   });
 });
 

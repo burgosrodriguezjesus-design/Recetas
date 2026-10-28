@@ -56,6 +56,7 @@ function manualPriceRecord(product: Product, ppb: number): PriceRecord {
     unit: (usePackage ? product.packageUnit : product.priceUnit) ?? product.unit,
     store: product.store,
     source: 'manual',
+    createdAt: nowISO(),
   };
 }
 

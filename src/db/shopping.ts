@@ -8,6 +8,7 @@ import { aggregateRequirements, itemSubtotal, planPurchase, subtractPantry, type
 import { convertForProduct, productBaseUnit, referencePrice } from '../domain/recipeCalc';
 import { roundMoney } from '../domain/format';
 import { roundQty } from '../domain/units';
+import { comparePriceRecords } from '../domain/stats';
 
 // ───────────────────────── Listas ─────────────────────────
 
@@ -288,6 +289,7 @@ export async function receivePurchase(listId: string, lines: ReceiveLine[], opts
           unit: inPantry.unit,
           store: opts.store || item.store,
           source: 'compra',
+          createdAt: now,
           ...(qBase && qBase > 0 ? { pricePerBase: paid / qBase, baseUnit: base } : {}),
         };
         await db.priceRecords.add(rec);
@@ -341,6 +343,6 @@ export async function receivePurchase(listId: string, lines: ReceiveLine[], opts
 
 /** Último precio pagado (por unidad base) de un producto antes de hoy, para comparar. */
 export async function lastPaidPrice(productId: string): Promise<PriceRecord | undefined> {
-  const recs = await db.priceRecords.where('productId').equals(productId).filter((r) => r.source === 'compra' && r.pricePerBase !== undefined).sortBy('date');
-  return recs.at(-1);
+  const recs = await db.priceRecords.where('productId').equals(productId).filter((r) => r.source === 'compra' && r.pricePerBase !== undefined).toArray();
+  return recs.sort(comparePriceRecords).at(-1);
 }

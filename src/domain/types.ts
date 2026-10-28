@@ -188,6 +188,8 @@ export interface PriceRecord {
   unit: Unit;
   store?: string;
   source: 'compra' | 'manual';
+  /** Momento exacto del registro: ordena varios precios del mismo día. */
+  createdAt?: string;
 }
 
 export type ConsumptionReason = 'cocinado' | 'desperdicio' | 'consumo' | 'ajuste';

@@ -171,6 +171,7 @@ export const priceRecordSchema = z.object({
   unit: unitSchema,
   store: optText(80),
   source: z.enum(['compra', 'manual']),
+  createdAt: timestamp.optional(),
 });
 
 export const consumptionSchema = z.object({

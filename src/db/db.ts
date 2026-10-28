@@ -49,9 +49,18 @@ export class CocinaDB extends Dexie {
       consumption: 'id, date, productId, reason, recipeId',
       settings: 'id',
     });
-    // Ejemplo de cómo sería una migración futura:
-    // this.version(2).stores({ recipes: 'id, name, category, favorite, updatedAt, *tags, rating' })
-    //   .upgrade(tx => tx.table('recipes').toCollection().modify(r => { r.rating ??= 0; }));
+    // Versión 2: los precios guardan el momento exacto (createdAt) para ordenar
+    // varios registros del mismo día. Los existentes reciben su fecha a las 00:00.
+    this.version(2)
+      .stores({ priceRecords: 'id, productId, date, [productId+date]' })
+      .upgrade((tx) =>
+        tx
+          .table('priceRecords')
+          .toCollection()
+          .modify((r: PriceRecord) => {
+            r.createdAt ??= `${r.date}T00:00:00.000Z`;
+          }),
+      );
   }
 }
 

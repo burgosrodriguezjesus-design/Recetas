@@ -88,6 +88,9 @@ export function formatWeekRange(weekStart: string): string {
   return `${formatDayMonth(weekStart)} – ${formatDayMonth(addDays(weekStart, 6))}`;
 }
 
+let lastNow = 0;
+/** Marca de tiempo actual, estrictamente creciente aunque se pida dos veces en el mismo milisegundo. */
 export function nowISO(): string {
-  return new Date().toISOString();
+  lastNow = Math.max(Date.now(), lastNow + 1);
+  return new Date(lastNow).toISOString();
 }

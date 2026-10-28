@@ -1,0 +1,154 @@
+@import 'tailwindcss';
+
+/* Modo oscuro controlado por la clase .dark en <html> (ver src/hooks/useTheme.ts). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Colores como variables: cambian solas en modo oscuro. */
+:root {
+  --c-bg: #f6f4ef;
+  --c-card: #ffffff;
+  --c-raised: #fbfaf7;
+  --c-ink: #1c2420;
+  --c-muted: #5c6a62;
+  --c-line: #e2ded4;
+  --c-brand: #2f6f4f;
+  --c-brand-strong: #255a40;
+  --c-brand-ink: #ffffff;
+  --c-soft: #e9f2ec;
+  --c-accent: #c2622d;
+  --c-danger: #b42318;
+  --c-danger-soft: #fdecea;
+  --c-warn: #9a5b00;
+  --c-warn-soft: #fff4e0;
+  --c-ok: #1f7a46;
+  --c-ok-soft: #e5f4ea;
+  color-scheme: light;
+}
+
+.dark {
+  --c-bg: #121614;
+  --c-card: #1a201d;
+  --c-raised: #202723;
+  --c-ink: #e7ece9;
+  --c-muted: #9aa8a0;
+  --c-line: #2e3833;
+  --c-brand: #5fb38a;
+  --c-brand-strong: #77c39d;
+  --c-brand-ink: #0d1a13;
+  --c-soft: #1f3128;
+  --c-accent: #e48a52;
+  --c-danger: #f97066;
+  --c-danger-soft: #3a1d1b;
+  --c-warn: #f5b754;
+  --c-warn-soft: #3a2c12;
+  --c-ok: #6fd39a;
+  --c-ok-soft: #173023;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-card: var(--c-card);
+  --color-raised: var(--c-raised);
+  --color-ink: var(--c-ink);
+  --color-muted: var(--c-muted);
+  --color-line: var(--c-line);
+  --color-brand: var(--c-brand);
+  --color-brand-strong: var(--c-brand-strong);
+  --color-brand-ink: var(--c-brand-ink);
+  --color-soft: var(--c-soft);
+  --color-accent: var(--c-accent);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-warn: var(--c-warn);
+  --color-warn-soft: var(--c-warn-soft);
+  --color-ok: var(--c-ok);
+  --color-ok-soft: var(--c-ok-soft);
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Las rejillas sin columnas explícitas no deben crecer más que su contenedor:
+   por defecto una columna implícita "auto" se ensancha hasta el contenido mínimo
+   (un buscador, una tabla…) y provoca desplazamiento horizontal en el móvil.
+   Al estar en la capa base, cualquier clase grid-cols-* la sustituye. */
+@layer base {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+html,
+body {
+  background: var(--c-bg);
+  color: var(--c-ink);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Números alineados en tablas y precios. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Zonas seguras del iPhone (notch y barra de inicio). */
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 0.25rem);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Diálogos nativos: hoja inferior en móvil, centrados en pantallas grandes. */
+dialog.sheet {
+  margin: auto auto 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 92dvh;
+  border-radius: 1.25rem 1.25rem 0 0;
+  padding: 0;
+  border: 0;
+  background: var(--c-card);
+  color: var(--c-ink);
+}
+@media (min-width: 640px) {
+  dialog.sheet {
+    margin: auto;
+    max-width: 36rem;
+    border-radius: 1.25rem;
+    max-height: 88dvh;
+  }
+  dialog.sheet.wide {
+    max-width: 52rem;
+  }
+}
+dialog.sheet::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-brand);
+  outline-offset: 2px;
+}
+
+input[type='checkbox'] {
+  accent-color: var(--c-brand);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body,
+  html {
+    background: #fff;
+    color: #000;
+  }
+  .print-plain {
+    box-shadow: none !important;
+    border-color: #ccc !important;
+  }
+}
